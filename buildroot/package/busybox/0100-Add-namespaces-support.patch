@@ -1,0 +1,165 @@
+From b88091c2c67d3f4de967d92dbf74813cdffb6a48 Mon Sep 17 00:00:00 2001
+From: Climate Corporation <daad-embedded-software@bayer.com>
+Date: Wed, 20 Nov 2019 11:32:32 -0600
+Subject: [PATCH] Add namespace support
+
+Ported namespace support (-d) from:
+https://github.com/daleobrien/start-stop-daemon
+---
+ debianutils/start_stop_daemon.c | 70 ++++++++++++++++++++++++++++++++-
+ 1 file changed, 69 insertions(+), 1 deletion(-)
+
+diff --git a/debianutils/start_stop_daemon.c b/debianutils/start_stop_daemon.c
+index 6fbf8b6..4b66300 100644
+--- a/debianutils/start_stop_daemon.c
++++ b/debianutils/start_stop_daemon.c
+@@ -45,6 +45,7 @@ Options which are valid for --start only:
+         -c,--chuid USER[:[GRP]] Change to specified user [and group]
+         -m,--make-pidfile       Write PID to the pidfile
+                                 (both -m and -p must be given!)
++        -d,--namespace NS_FILE  Path to namespace such as /var/run/netns/[name]
+ 
+ Options which are valid for --stop only:
+         -s,--signal SIG         Signal to send (default:TERM)
+@@ -106,6 +107,7 @@ Misc options:
+ //usage:	)
+ //usage:     "\n	-c USER[:[GRP]]	Change user/group"
+ //usage:     "\n	-m		Write PID to pidfile specified by -p"
++//usage:     "\n        -d,--namespace NS_FILE  Path to namespace such as /var/run/netns/[name]"
+ //usage:     "\n-K only:"
+ //usage:     "\n	-s SIG		Signal to send"
+ //usage:     "\n	-t		Match only, exit with 0 if found"
+@@ -120,6 +122,9 @@ Misc options:
+ #define WANT_PIDFILE 1
+ #include "libbb.h"
+ #include "common_bufsiz.h"
++#if ENABLE_FEATURE_START_STOP_DAEMON_FANCY
++#include <sched.h>
++#endif
+ 
+ struct pid_list {
+ 	struct pid_list *next;
+@@ -143,6 +148,7 @@ enum {
+ 	OPT_OKNODO     = (1 << 13) * ENABLE_FEATURE_START_STOP_DAEMON_FANCY, // -o
+ 	OPT_VERBOSE    = (1 << 14) * ENABLE_FEATURE_START_STOP_DAEMON_FANCY, // -v
+ 	OPT_NICELEVEL  = (1 << 15) * ENABLE_FEATURE_START_STOP_DAEMON_FANCY, // -N
++	OPT_NAMESPACE  = (1 << 16) * ENABLE_FEATURE_START_STOP_DAEMON_FANCY, // -d
+ };
+ #define QUIET (option_mask32 & OPT_QUIET)
+ #define TEST  (option_mask32 & OPT_TEST)
+@@ -153,6 +159,7 @@ struct globals {
+ 	char *cmdname;
+ 	char *execname;
+ 	char *pidfile;
++	char *namespace;
+ 	char *execname_cmpbuf;
+ 	unsigned execname_sizeof;
+ 	int user_id;
+@@ -166,6 +173,7 @@ struct globals {
+ #define cmdname           (G.cmdname             )
+ #define execname          (G.execname            )
+ #define pidfile           (G.pidfile             )
++#define namespace         (G.namespace           )
+ #define user_id           (G.user_id             )
+ #define signal_nr         (G.signal_nr           )
+ #define INIT_G() do { \
+@@ -373,6 +381,59 @@ static int do_stop(void)
+ 	return killed;
+ }
+ 
++#if ENABLE_FEATURE_START_STOP_DAEMON_FANCY
++static char * next_dirname(const char *s)
++{
++	char *cur;
++
++	cur = (char *)s;
++
++	if (*cur != '\0') {
++		for (; *cur != '/'; ++cur) {
++			if (*cur == '\0') {
++				return cur;
++			}
++		}
++
++		for (; *cur == '/'; ++cur) {
++			;
++		}
++	}
++
++	return cur;
++}
++static void set_namespace(void)
++{
++	int fd, nstype;
++	char *nsdirname, *nsname, *cur;
++
++	cur = namespace;
++	nsdirname = nsname = "";
++
++	while ((cur = next_dirname(cur))[0] != '\0') {
++		nsdirname = nsname;
++		nsname = cur;
++	}
++
++	if      (!memcmp(nsdirname, "ipcns/", strlen("ipcns/"))) {
++		nstype = CLONE_NEWIPC;
++	} else if (!memcmp(nsdirname, "netns/", strlen("netns/"))) {
++		nstype = CLONE_NEWNET;
++	} else if (!memcmp(nsdirname, "utcns/", strlen("utcns/"))) {
++		nstype = CLONE_NEWUTS;
++	} else {
++		bb_show_usage();
++	}
++
++	if ((fd = open(namespace, O_RDONLY)) == -1) {
++		bb_perror_msg_and_die("open namespace %s: %s", namespace, strerror(errno));
++	}
++	if (setns(fd, nstype) == -1) {
++		bb_perror_msg_and_die("setns %s: %s", namespace, strerror(errno));
++	}
++}
++#endif
++
+ #if ENABLE_FEATURE_START_STOP_DAEMON_LONG_OPTIONS
+ static const char start_stop_daemon_longopts[] ALIGN1 =
+ 	"stop\0"         No_argument       "K"
+@@ -395,6 +456,8 @@ static const char start_stop_daemon_longopts[] ALIGN1 =
+ 	"pidfile\0"      Required_argument "p"
+ # if ENABLE_FEATURE_START_STOP_DAEMON_FANCY
+ 	"retry\0"        Required_argument "R"
++	"namespace\0"    Required_argument "d"
++
+ # endif
+ 	;
+ # define GETOPT32 getopt32long
+@@ -421,7 +484,7 @@ int start_stop_daemon_main(int argc UNUSED_PARAM, char **argv)
+ 
+ 	opt = GETOPT32(argv, "^"
+ 		"KSbqtma:n:s:u:c:x:p:"
+-		IF_FEATURE_START_STOP_DAEMON_FANCY("ovN:R:")
++		IF_FEATURE_START_STOP_DAEMON_FANCY("ovN:d:R:")
+ 			/* -K or -S is required; they are mutually exclusive */
+ 			/* -p is required if -m is given */
+ 			/* -xpun (at least one) is required if -K is given */
+@@ -434,6 +497,7 @@ int start_stop_daemon_main(int argc UNUSED_PARAM, char **argv)
+ 		LONGOPTS
+ 		&startas, &cmdname, &signame, &userspec, &chuid, &execname, &pidfile
+ 		IF_FEATURE_START_STOP_DAEMON_FANCY(,&opt_N)
++		IF_FEATURE_START_STOP_DAEMON_FANCY(,&namespace)
+ 		/* We accept and ignore -R <param> / --retry <param> */
+ 		IF_FEATURE_START_STOP_DAEMON_FANCY(,NULL)
+ 	);
+@@ -545,6 +609,10 @@ int start_stop_daemon_main(int argc UNUSED_PARAM, char **argv)
+ 			bb_perror_msg_and_die("setpriority(%d)", prio);
+ 		}
+ 	}
++	/* namespace change needs to be before UID change */
++	if (opt & OPT_NAMESPACE) {
++		set_namespace();
++	}
+ #endif
+ 	if (opt & OPT_c) {
+ 		struct bb_uidgid_t ugid;
+-- 
+2.20.1
+

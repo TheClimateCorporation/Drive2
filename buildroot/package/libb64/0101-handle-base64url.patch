@@ -1,0 +1,136 @@
+diff -ru libb64-1.2.1/include/b64/cencode.h ./include/b64/cencode.h
+--- libb64-1.2.1/include/b64/cencode.h	2013-06-18 07:49:36.000000000 -0500
++++ ./include/b64/cencode.h	2020-11-17 16:11:41.727968031 -0600
+@@ -18,12 +18,16 @@
+ 	base64_encodestep step;
+ 	char result;
+ 	int stepcount;
++	int use_b64url;
++	int use_pad;
+ } base64_encodestate;
+ 
+-void base64_init_encodestate(base64_encodestate* state_in);
++void base64_init_encodestate(base64_encodestate* state_in, int use_b64url, int use_pad);
+ 
+ char base64_encode_value(char value_in);
+ 
++char base64url_encode_value(char value_in);
++
+ int base64_encode_block(const char* plaintext_in, int length_in, char* code_out, base64_encodestate* state_in);
+ 
+ int base64_encode_blockend(char* code_out, base64_encodestate* state_in);
+diff -ru libb64-1.2.1/src/cdecode.c ./src/cdecode.c
+--- libb64-1.2.1/src/cdecode.c	2020-11-11 10:22:19.061120182 -0600
++++ ./src/cdecode.c	2020-11-17 15:49:24.349094071 -0600
+@@ -9,7 +9,8 @@
+ 
+ int base64_decode_value(char value_in)
+ {
+-	static const signed char decoding[] = {62,-1,-1,-1,63,52,53,54,55,56,57,58,59,60,61,-1,-1,-1,-2,-1,-1,-1,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,-1,-1,-1,-1,-1,-1,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51};
++	// handle both '+' and '-' -> 62, as well as '/' and '_' -> 63
++	static const signed char decoding[] = {62,-1,62,-1,63,52,53,54,55,56,57,58,59,60,61,-1,-1,-1,-2,-1,-1,-1,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,-1,-1,-1,-1,63,-1,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51};
+ 	static const char decoding_size = sizeof(decoding);
+ 	if (value_in < 43) return -1;
+ 	value_in -= 43;
+diff -ru libb64-1.2.1/src/cencode.c ./src/cencode.c
+--- libb64-1.2.1/src/cencode.c	2020-11-11 10:22:19.077119705 -0600
++++ ./src/cencode.c	2020-11-17 16:10:03.020666483 -0600
+@@ -9,11 +9,13 @@
+ 
+ const int CHARS_PER_LINE = 72;
+ 
+-void base64_init_encodestate(base64_encodestate* state_in)
++void base64_init_encodestate(base64_encodestate* state_in, int use_b64url, int use_pad)
+ {
+ 	state_in->step = step_A;
+ 	state_in->result = 0;
+ 	state_in->stepcount = 0;
++	state_in->use_b64url = use_b64url;
++	state_in->use_pad = use_pad;
+ }
+ 
+ char base64_encode_value(char value_in)
+@@ -23,6 +25,13 @@
+ 	return encoding[(int)value_in];
+ }
+ 
++char base64url_encode_value(char value_in)
++{
++	static const char* encoding = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
++	if (value_in > 63) return '=';
++	return encoding[(int)value_in];
++}
++
+ int base64_encode_block(const char* plaintext_in, int length_in, char* code_out, base64_encodestate* state_in)
+ {
+ 	const char* plainchar = plaintext_in;
+@@ -30,7 +39,8 @@
+ 	char* codechar = code_out;
+ 	char result;
+ 	char fragment;
+-	
++	char (*b64_encode_value)(char value_in) = state_in->use_b64url ? base64url_encode_value : base64_encode_value;
++
+ 	result = state_in->result;
+ 	
+ 	switch (state_in->step)
+@@ -46,7 +56,7 @@
+ 			}
+ 			fragment = *plainchar++;
+ 			result = (fragment & 0x0fc) >> 2;
+-			*codechar++ = base64_encode_value(result);
++			*codechar++ = b64_encode_value(result);
+ 			result = (fragment & 0x003) << 4;
+ 	case step_B:
+ 			if (plainchar == plaintextend)
+@@ -57,7 +67,7 @@
+ 			}
+ 			fragment = *plainchar++;
+ 			result |= (fragment & 0x0f0) >> 4;
+-			*codechar++ = base64_encode_value(result);
++			*codechar++ = b64_encode_value(result);
+ 			result = (fragment & 0x00f) << 2;
+ 	case step_C:
+ 			if (plainchar == plaintextend)
+@@ -68,9 +78,9 @@
+ 			}
+ 			fragment = *plainchar++;
+ 			result |= (fragment & 0x0c0) >> 6;
+-			*codechar++ = base64_encode_value(result);
++			*codechar++ = b64_encode_value(result);
+ 			result  = (fragment & 0x03f) >> 0;
+-			*codechar++ = base64_encode_value(result);
++			*codechar++ = b64_encode_value(result);
+ 			
+ 			++(state_in->stepcount);
+ 			if (state_in->stepcount == CHARS_PER_LINE/4)
+@@ -87,17 +97,24 @@
+ int base64_encode_blockend(char* code_out, base64_encodestate* state_in)
+ {
+ 	char* codechar = code_out;
++	char (*b64_encode_value)(char value_in) = state_in->use_b64url ? base64url_encode_value : base64_encode_value;
+ 	
+ 	switch (state_in->step)
+ 	{
+ 	case step_B:
+-		*codechar++ = base64_encode_value(state_in->result);
+-		*codechar++ = '=';
+-		*codechar++ = '=';
++		*codechar++ = b64_encode_value(state_in->result);
++		if (state_in->use_pad)
++		{
++			*codechar++ = '=';
++			*codechar++ = '=';
++		}
+ 		break;
+ 	case step_C:
+-		*codechar++ = base64_encode_value(state_in->result);
+-		*codechar++ = '=';
++		*codechar++ = b64_encode_value(state_in->result);
++		if (state_in->use_pad)
++		{
++			*codechar++ = '=';
++		}
+ 		break;
+ 	case step_A:
+ 		break;

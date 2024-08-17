@@ -1,0 +1,47 @@
+From 6bffdfe4a479d8003da071de05355997d3524e71 Mon Sep 17 00:00:00 2001
+From: Climate Corporation <daad-embedded-software@bayer.com>
+Date: Wed, 8 Jan 2020 10:20:36 -0600
+Subject: [PATCH] Allow core dumps
+
+---
+ dbutil.c | 2 ++
+ dbutil.h | 4 ++++
+ 2 files changed, 6 insertions(+)
+
+diff --git a/dbutil.c b/dbutil.c
+index 32920f7..2d2b599 100644
+--- a/dbutil.c
++++ b/dbutil.c
+@@ -552,11 +552,13 @@ void setnonblocking(int fd) {
+ 	TRACE(("leave setnonblocking"))
+ }
+ 
++#ifdef DISABLE_CORE
+ void disallow_core() {
+ 	struct rlimit lim;
+ 	lim.rlim_cur = lim.rlim_max = 0;
+ 	setrlimit(RLIMIT_CORE, &lim);
+ }
++#endif
+ 
+ /* Returns DROPBEAR_SUCCESS or DROPBEAR_FAILURE, with the result in *val */
+ int m_str_to_uint(const char* str, unsigned int *val) {
+diff --git a/dbutil.h b/dbutil.h
+index 2a1c82c..2e0d903 100644
+--- a/dbutil.h
++++ b/dbutil.h
+@@ -68,7 +68,11 @@ int buf_getline(buffer * line, FILE * authfile);
+ 
+ void m_close(int fd);
+ void setnonblocking(int fd);
++#ifdef DISABLE_CORE
+ void disallow_core(void);
++#else
++#define disallow_core()
++#endif
+ int m_str_to_uint(const char* str, unsigned int *val);
+ 
+ /* Used to force mp_ints to be initialised */
+-- 
+2.20.1
+

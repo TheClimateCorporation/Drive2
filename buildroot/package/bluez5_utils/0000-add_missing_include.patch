@@ -1,0 +1,22 @@
+diff -ru bluez5_utils-5.50/tools/l2test.c mod_bluez5_utils-5.50/tools/l2test.c
+--- bluez5_utils-5.50/tools/l2test.c	2016-10-28 07:57:27.000000000 -0500
++++ mod_bluez5_utils-5.50/tools/l2test.c	2023-08-29 16:52:01.205985465 -0500
+@@ -41,6 +41,7 @@
+ #include <poll.h>
+ #include <sys/ioctl.h>
+ #include <sys/socket.h>
++#include <linux/sockios.h>
+ 
+ #include "lib/bluetooth.h"
+ #include "lib/hci.h"
+diff -ru bluez5_utils-5.50/tools/rctest.c mod_bluez5_utils-5.50/tools/rctest.c
+--- bluez5_utils-5.50/tools/rctest.c	2016-10-28 07:57:27.000000000 -0500
++++ mod_bluez5_utils-5.50/tools/rctest.c	2023-08-29 16:52:01.205985465 -0500
+@@ -39,6 +39,7 @@
+ #include <sys/ioctl.h>
+ #include <sys/socket.h>
+ #include <sys/stat.h>
++#include <linux/sockios.h>
+ 
+ #include "lib/bluetooth.h"
+ #include "lib/hci.h"

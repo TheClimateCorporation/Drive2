@@ -1,0 +1,4 @@
+config BR2_PACKAGE_BRCM_PATCHRAM
+    bool "brcm-patchram"
+    help
+      Broadcom patchram utility

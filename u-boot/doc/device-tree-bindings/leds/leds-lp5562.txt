@@ -1,0 +1,61 @@
+LEDs connected to TI LP5562 controller
+
+This driver works with a TI LP5562 4-channel LED controller.
+CONFIG_LED_BLINK is supported using the controller engines.  However
+there are only 3 engines available for the 4 channels.  This means
+that the blue and white channels share the same engine.  When both
+blue and white LEDs are set to blink, they will share the same blink
+rate.  Changing the blink rate of the blue LED will affect the white
+LED and vice-versa.  Manual on/off is handled independently for all
+4 channels.
+
+Required properties:
+  - compatible : should be "ti,lp5562-leds".
+  - #address-cells : must be 1.
+  - #size-cells : must be 0.
+  - reg : LP5562 LED controller I2C address.
+
+Optional properties:
+  - gpios : Enable GPIO
+  - ti,external_clock : Boolean, configures controller for external
+    32 kHZ clock input.  Default : false (use internal clock)
+
+Each LED is represented as a sub-node of the ti,lp5562-leds device.
+
+LED sub-node required properties:
+  - reg : PWM register number for channel
+
+LED sub-node optional properties:
+  - label : see Documentation/devicetree/bindings/leds/common.txt
+  - ti,led_current : LED current at max brightness in 100uA steps (0x00 - 0xFF)
+    Default : 0x64 (10 ma)
+
+Example:
+        leds0: lp5562@30 {
+                compatible = "ti,lp5562-leds";
+                #address-cells = <1>;
+                #size-cells = <0>;
+                gpios = <&gpio3 9 GPIO_ACTIVE_HIGH>;
+                reg = <0x30>;
+
+                blue@0 {
+                        reg = <0x2>;
+                        label = "blue";
+                        ti,led_current = <0xC8>; /* 20ma */
+                };
+                green@1 {
+                        reg = <0x3>;
+                        label = "green";
+                        ti,led_current = <0xC8>; /* 20ma */
+                };
+                red@2 {
+                        reg = <0x4>;
+                        label = "red";
+                        ti,led_current = <0xC8>; /* 20ma */
+                };
+                white@3 {
+                        reg = <0xE>;
+                        label = "white";
+                        ti,led_current = <0xC8>; /* 20ma */
+                };
+        };

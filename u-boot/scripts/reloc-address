@@ -1,0 +1,44 @@
+#!/bin/bash
+
+# This script attempts to calcualte the relocation offset that u-boot moves
+# to at runtime based soley on an MBM binary.  The location depends on a
+# bunch of compile time flags so this could break as features are enabled
+# or disabled.
+#
+# You can get the actual offset value by checking a serial console at boot
+# and looking for the line:
+#    Relocating to 9ff52000, new gd at 9df31ed8, sp at 9df29350
+# and use the 'Relocaing to' address.
+#
+
+LAST_MEM_ADDR="A0000000"
+TLB_SIZE="10000"
+
+if [ $# -ne 1 ] || [ ! -f $1 ]
+then
+  echo "Usage: $(basename $0) [u-boot binary]"
+  echo "Calculates the u-boot relocation address"
+  exit 1
+fi
+
+PATH=${CROSS_COMPILE}:${PATH}
+which arm-linux-gnueabihf-nm > /dev/null 2>&1
+if [[ $? -ne 0 ]]
+then
+  echo "Error: Couldn't find arm-linux-gnueabihf-nm"
+  echo "Try: export CROSS_COMPILE=[build root]/toolchain/gcc-linaro-5.3-2016.02-x86_64_arm-linux-gnueabihf/bin"
+  exit 1
+fi
+
+START=$(arm-linux-gnueabihf-nm $1 | awk '$3 == "_start" {print $1}' | tr '[a-f]' '[A-F]')
+END=$(arm-linux-gnueabihf-nm $1 | awk '$3 == "__bss_end" {print $1}' | tr '[a-f]' '[A-F]')
+SIZE=$(echo "obase=16;ibase=16;$END-$START" | bc)
+
+RELOCADDR=$(echo "obase=16;ibase=16;$LAST_MEM_ADDR-$SIZE-$TLB_SIZE" | bc)
+
+# Round down by 1 page
+REMAIN=$(echo "obase=16;ibase=16;$RELOCADDR%10000" | bc)
+RELOCADDR=$(echo "obase=16;ibase=16;$RELOCADDR-$REMAIN" | bc)
+
+echo "Original code location: 0x${START} [0x${SIZE} bytes]"
+echo "Relocated code location: 0x${RELOCADDR}"
